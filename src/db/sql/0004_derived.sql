@@ -7,22 +7,38 @@
 CREATE OR REPLACE FUNCTION apply_stock_movement() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
+  current_qty bigint;
   new_balance bigint;
 BEGIN
-  UPDATE batch
-     SET quantity_on_hand = quantity_on_hand + NEW.quantity_delta,
-         updated_at       = now()
-   WHERE id = NEW.batch_id
-  RETURNING quantity_on_hand INTO new_balance;
+  -- Lock the batch row first. Without FOR UPDATE two concurrent dispenses can
+  -- both read the same balance and both succeed, overselling the lot — the
+  -- classic inventory race, and it only shows up under real load.
+  SELECT quantity_on_hand INTO current_qty
+    FROM batch WHERE id = NEW.batch_id
+     FOR UPDATE;
 
-  IF new_balance IS NULL THEN
-    RAISE EXCEPTION 'stock_movement references unknown batch %', NEW.batch_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'stock_movement references unknown batch %', NEW.batch_id
+      USING ERRCODE = 'foreign_key_violation';
   END IF;
 
+  new_balance := current_qty + NEW.quantity_delta;
+
+  -- Validate before writing, so the caller gets this message rather than the
+  -- batch_quantity_non_negative CHECK, which would otherwise fire first and
+  -- surface as an opaque constraint name.
   IF new_balance < 0 THEN
-    RAISE EXCEPTION 'stock_movement would drive batch % negative (%).',
-      NEW.batch_id, new_balance;
+    RAISE EXCEPTION
+      'insufficient stock: batch % has %, cannot apply %',
+      NEW.batch_id, current_qty, NEW.quantity_delta
+      USING ERRCODE = 'check_violation',
+            HINT = 'Dispense at most the quantity on hand, or record a receipt first.';
   END IF;
+
+  UPDATE batch
+     SET quantity_on_hand = new_balance,
+         updated_at       = now()
+   WHERE id = NEW.batch_id;
 
   NEW.balance_after := new_balance;
 

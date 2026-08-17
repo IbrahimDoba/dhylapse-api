@@ -11,16 +11,46 @@ before the backend is built.
 
 ## Setup
 
+Postgres **18+** is required — the schema uses native `uuidv7()`.
+
 ```sh
 pnpm install
 cp .env.example .env
-pnpm db:up          # postgres 18 in docker
-psql "$DATABASE_URL" -f src/db/sql/0001_extensions.sql
-pnpm db:generate    # drizzle-kit: schema -> migration
-pnpm db:migrate
-psql "$DATABASE_URL" -f src/db/sql/0002_rls.sql
-psql "$DATABASE_URL" -f src/db/sql/0004_derived.sql
 ```
+
+Start Postgres, either with Docker:
+
+```sh
+pnpm db:up
+```
+
+or with Homebrew, if you don't run Docker:
+
+```sh
+brew install postgresql@18 && brew services start postgresql@18
+export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
+createuser -s dhylapse && createdb -O dhylapse dhylapse
+```
+
+Then apply the schema **in this order**:
+
+```sh
+export DATABASE_URL=postgres://dhylapse:dhylapse@localhost:5432/dhylapse
+
+psql "$DATABASE_URL" -f src/db/sql/0001_extensions.sql   # pg_trgm, citext, uuidv7 check
+pnpm db:migrate                                          # 43 tables
+psql "$DATABASE_URL" -f src/db/sql/0002_rls.sql          # tenant isolation
+psql "$DATABASE_URL" -f src/db/sql/0004_derived.sql      # ledger triggers + constraints
+psql "$DATABASE_URL" -f src/db/verify.sql                # prove it works
+```
+
+> **Do not stop after `db:migrate`.** That leaves you with a schema that has
+> **no tenant isolation and no ledger enforcement**, and nothing will tell you.
+> Steps 3 and 4 are what make the guarantees real. `verify.sql` prints ten
+> `PASS` lines when the database is set up correctly.
+
+Tenant isolation is enforced for unprivileged roles only — superusers bypass
+RLS. The app must connect as `dhylapse_app`, never as the migration role.
 
 ## Layout
 
