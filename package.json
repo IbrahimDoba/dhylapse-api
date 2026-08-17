@@ -1,0 +1,27 @@
+{
+  "name": "dhylapse-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.ts",
+    "build": "tsc -b",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:up": "docker compose up -d",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.7",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "drizzle-kit": "^0.31.6",
+    "typescript": "~6.0.2"
+  }
+}
