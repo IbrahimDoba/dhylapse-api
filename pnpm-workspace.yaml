@@ -1,2 +1,4 @@
+# esbuild's postinstall links its platform-native binary. drizzle-kit depends
+# on it; allowing the build keeps drizzle-kit working across machines.
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true

@@ -6,8 +6,9 @@ Fastify + TypeScript + Postgres + Drizzle. Companion repo to the React frontend.
 
 ## Status
 
-Schema design complete. No API routes yet — the data model is being reviewed
-before the backend is built.
+Schema verified against Postgres 18. Fastify skeleton runs with tenant-scoped
+database access, boot-time configuration checks, and health endpoints. Auth,
+inventory, and the expiry engine are next.
 
 ## Setup
 
@@ -41,7 +42,16 @@ psql "$DATABASE_URL" -f src/db/sql/0001_extensions.sql   # pg_trgm, citext, uuid
 pnpm db:migrate                                          # 43 tables
 psql "$DATABASE_URL" -f src/db/sql/0002_rls.sql          # tenant isolation
 psql "$DATABASE_URL" -f src/db/sql/0004_derived.sql      # ledger triggers + constraints
+psql "$DATABASE_URL" -f src/db/sql/0005_app_role.sql     # unprivileged app role
 psql "$DATABASE_URL" -f src/db/verify.sql                # prove it works
+```
+
+Then run it:
+
+```sh
+cp .env.example .env      # DATABASE_URL must point at dhylapse_app
+pnpm dev                  # http://localhost:3001/health
+pnpm check:tenant         # prove isolation holds through the app, not just the DB
 ```
 
 > **Do not stop after `db:migrate`.** That leaves you with a schema that has
@@ -50,7 +60,13 @@ psql "$DATABASE_URL" -f src/db/verify.sql                # prove it works
 > `PASS` lines when the database is set up correctly.
 
 Tenant isolation is enforced for unprivileged roles only — superusers bypass
-RLS. The app must connect as `dhylapse_app`, never as the migration role.
+RLS. The app must connect as `dhylapse_app`, never as the migration role. The
+server checks this at boot and refuses to start otherwise, so a misconfigured
+deploy fails loudly instead of serving one tenant's stock to another.
+
+Every tenant-scoped query goes through `withTenant(orgId, fn)`, which opens a
+transaction and sets `app.organization_id` for its duration. Forgetting it
+returns zero rows, never another tenant's data.
 
 ## Layout
 

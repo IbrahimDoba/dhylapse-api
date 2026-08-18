@@ -175,12 +175,5 @@ END $$;
 
 COMMIT;
 
--- ------------------------------------------------------------- 10. RLS check
--- Superusers bypass RLS entirely, so this must run as the unprivileged role.
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='dhylapse_app') THEN
-    CREATE ROLE dhylapse_app LOGIN PASSWORD 'dhylapse_app';
-  END IF;
-END $$;
-GRANT USAGE ON SCHEMA public TO dhylapse_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dhylapse_app;
+-- RLS itself is verified separately: superusers bypass row-level security, so
+-- it must be exercised as dhylapse_app. See README.
