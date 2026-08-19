@@ -32,6 +32,14 @@ const EnvSchema = Type.Object({
 
   /** Comma-separated list, or "*" in development. */
   CORS_ORIGIN: Type.String({ default: 'http://localhost:5173' }),
+
+  /** Signs session cookies. Rotating it logs everyone out. */
+  BETTER_AUTH_SECRET: Type.String({ minLength: 32 }),
+  BETTER_AUTH_URL: Type.String({ default: 'http://localhost:4000' }),
+
+  /** Google OAuth is optional — omit both to run with email+password only. */
+  GOOGLE_CLIENT_ID: Type.Optional(Type.String()),
+  GOOGLE_CLIENT_SECRET: Type.Optional(Type.String()),
 });
 
 function load() {
@@ -44,6 +52,10 @@ function load() {
     DATABASE_MIGRATION_URL: process.env.DATABASE_MIGRATION_URL,
     DATABASE_POOL_MAX: process.env.DATABASE_POOL_MAX,
     CORS_ORIGIN: process.env.CORS_ORIGIN,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
   };
 
   // Drop unset keys so schema defaults apply, then coerce numeric strings.

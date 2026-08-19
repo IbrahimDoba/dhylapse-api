@@ -23,12 +23,32 @@ export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *    `set_config(..., false)` the value persists on the pooled connection and
  *    leaks into whichever request picks it up next.
  */
+export interface TenantScope {
+  organizationId: string;
+  /** Who is acting. Optional for background jobs that act as the system. */
+  userId?: string | undefined;
+}
+
 export async function withTenant<T>(
-  organizationId: string,
+  scope: TenantScope | string,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
+  const { organizationId, userId } = typeof scope === 'string' ? { organizationId: scope, userId: undefined } : scope;
   return db.transaction(async (tx) => {
     await tx.execute(raw`SELECT set_config('app.organization_id', ${organizationId}, true)`);
+    await tx.execute(raw`SELECT set_config('app.user_id', ${userId ?? ''}, true)`);
+    return fn(tx);
+  });
+}
+
+/**
+ * Identity without a tenant. The only thing visible here is the caller's own
+ * memberships and the organizations they belong to — which is exactly what an
+ * org switcher needs, and nothing more.
+ */
+export async function withUser<T>(userId: string, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(raw`SELECT set_config('app.user_id', ${userId}, true)`);
     return fn(tx);
   });
 }

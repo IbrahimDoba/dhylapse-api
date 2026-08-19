@@ -4,7 +4,11 @@
 --
 -- Every check RAISEs on failure, so a clean run means the guarantees the
 -- application relies on are actually enforced by the database. Run as a
--- superuser; the RLS checks re-connect as the unprivileged app role.
+-- superuser; RLS is verified separately (superusers bypass it) by
+-- scripts/tenant-check.ts.
+--
+-- The whole run is rolled back, so it leaves no fixtures behind and can be run
+-- as often as you like against a live database.
 
 \set ON_ERROR_STOP on
 \timing off
@@ -173,7 +177,7 @@ EXCEPTION WHEN check_violation THEN
   RAISE NOTICE 'PASS 9  expiry-before-manufacture rejected';
 END $$;
 
-COMMIT;
+ROLLBACK;
 
 -- RLS itself is verified separately: superusers bypass row-level security, so
 -- it must be exercised as dhylapse_app. See README.

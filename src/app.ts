@@ -5,7 +5,9 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { env } from './env.ts';
 import { toHttpError } from './lib/errors.ts';
+import authPlugin from './plugins/auth.ts';
 import { healthRoutes } from './routes/health.ts';
+import { workspaceRoutes } from './routes/workspace.ts';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -79,7 +81,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     reply.code(404).send({ error: 'not_found', message: 'Not found.', requestId: req.id }),
   );
 
+  await app.register(authPlugin);
+
   await app.register(healthRoutes);
+  await app.register(workspaceRoutes);
 
   return app;
 }

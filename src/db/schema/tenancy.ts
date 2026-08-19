@@ -124,8 +124,14 @@ export const appUser = pgTable(
   {
     id: pk(),
     email: text('email').notNull(),
-    emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Boolean, not a timestamp — better-auth owns this table as its `user`
+     * model and expects `emailVerified: boolean`. The verification *time* is
+     * recoverable from auth_verification if it is ever needed.
+     */
+    emailVerified: boolean('email_verified').notNull().default(false),
     name: text('name').notNull(),
+    /** Mapped from better-auth's `image` field; see src/auth/config.ts. */
     avatarUrl: text('avatar_url'),
     phone: varchar('phone', { length: 32 }),
 

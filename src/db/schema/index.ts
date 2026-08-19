@@ -10,6 +10,7 @@
 
 export * from './_shared.ts';
 export * from './tenancy.ts';
+export * from './auth.ts';
 export * from './catalog.ts';
 export * from './inventory.ts';
 export * from './alerts.ts';

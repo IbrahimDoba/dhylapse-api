@@ -6,9 +6,10 @@ Fastify + TypeScript + Postgres + Drizzle. Companion repo to the React frontend.
 
 ## Status
 
-Schema verified against Postgres 18. Fastify skeleton runs with tenant-scoped
-database access, boot-time configuration checks, and health endpoints. Auth,
-inventory, and the expiry engine are next.
+Schema verified against Postgres 18. Fastify runs with tenant-scoped database
+access, boot-time configuration checks, and authentication: sign-up, sessions,
+workspace bootstrapping, and membership resolution work end to end. Inventory
+and the expiry engine are next.
 
 ## Setup
 
@@ -43,7 +44,14 @@ pnpm db:migrate                                          # 43 tables
 psql "$DATABASE_URL" -f src/db/sql/0002_rls.sql          # tenant isolation
 psql "$DATABASE_URL" -f src/db/sql/0004_derived.sql      # ledger triggers + constraints
 psql "$DATABASE_URL" -f src/db/sql/0005_app_role.sql     # unprivileged app role
+psql "$DATABASE_URL" -f src/db/sql/0006_bootstrap.sql    # signup bootstrap function
 psql "$DATABASE_URL" -f src/db/verify.sql                # prove it works
+```
+
+Or run the whole sequence:
+
+```sh
+./scripts/db-setup.sh --reset
 ```
 
 Then run it:
@@ -64,9 +72,36 @@ RLS. The app must connect as `dhylapse_app`, never as the migration role. The
 server checks this at boot and refuses to start otherwise, so a misconfigured
 deploy fails loudly instead of serving one tenant's stock to another.
 
-Every tenant-scoped query goes through `withTenant(orgId, fn)`, which opens a
-transaction and sets `app.organization_id` for its duration. Forgetting it
+Every tenant-scoped query goes through `withTenant({ organizationId, userId })`,
+which opens a transaction and sets both values for its duration. Forgetting it
 returns zero rows, never another tenant's data.
+
+RLS has two dimensions. `app.organization_id` scopes tenant data; `app.user_id`
+is what lets someone see which organizations they belong to *before* one is
+selected — otherwise an org switcher is impossible without a hole in the policy.
+`withUser(userId, fn)` sets identity only.
+
+`organization` cannot be inserted by the app role at all, so signup goes through
+the `bootstrap_organization` SECURITY DEFINER function, which creates the org,
+its first location, an owner membership, and the default alert ladder in one
+transaction.
+
+## Auth
+
+better-auth owns the credential plane (`app_user`, `auth_session`,
+`auth_account`, `auth_verification`) and is mounted at `/api/auth/*`. It does
+not own tenancy: a session says who someone is, `membership` says which
+organizations they may act for.
+
+```
+POST /api/auth/sign-up/email    { email, password, name }
+POST /api/auth/sign-in/email    { email, password }
+GET  /api/me                    identity + memberships + active org
+POST /api/workspaces            { name } -> org, location, alert rules
+```
+
+Requests select a workspace with the `X-Organization-Id` header. A header naming
+an organization the caller is not a member of is ignored, not honoured.
 
 ## Layout
 

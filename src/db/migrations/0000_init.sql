@@ -1,7 +1,7 @@
 CREATE TABLE "app_user" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"email" text NOT NULL,
-	"email_verified_at" timestamp with time zone,
+	"email_verified" boolean DEFAULT false NOT NULL,
 	"name" text NOT NULL,
 	"avatar_url" text,
 	"phone" varchar(32),
@@ -104,6 +104,43 @@ CREATE TABLE "organization" (
 	"deleted_at" timestamp with time zone,
 	"created_by" uuid,
 	"updated_by" uuid
+);
+--> statement-breakpoint
+CREATE TABLE "auth_account" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"issuer" text,
+	"account_id" text NOT NULL,
+	"provider_id" text NOT NULL,
+	"access_token" text,
+	"refresh_token" text,
+	"id_token" text,
+	"access_token_expires_at" timestamp with time zone,
+	"refresh_token_expires_at" timestamp with time zone,
+	"scope" text,
+	"password" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "auth_session" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"token" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"ip_address" text,
+	"user_agent" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "auth_verification" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"identifier" text NOT NULL,
+	"value" text NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "drug_catalog" (
@@ -841,6 +878,8 @@ ALTER TABLE "membership" ADD CONSTRAINT "membership_organization_id_organization
 ALTER TABLE "membership" ADD CONSTRAINT "membership_user_id_app_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."app_user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "membership_location" ADD CONSTRAINT "membership_location_membership_id_membership_id_fk" FOREIGN KEY ("membership_id") REFERENCES "public"."membership"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "membership_location" ADD CONSTRAINT "membership_location_location_id_location_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."location"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "auth_account" ADD CONSTRAINT "auth_account_user_id_app_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."app_user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "auth_session" ADD CONSTRAINT "auth_session_user_id_app_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."app_user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drug_catalog" ADD CONSTRAINT "drug_catalog_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product" ADD CONSTRAINT "product_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product" ADD CONSTRAINT "product_catalog_id_drug_catalog_id_fk" FOREIGN KEY ("catalog_id") REFERENCES "public"."drug_catalog"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -954,6 +993,12 @@ CREATE UNIQUE INDEX "membership_org_user_key" ON "membership" USING btree ("orga
 CREATE INDEX "membership_user_idx" ON "membership" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "membership_location_location_idx" ON "membership_location" USING btree ("location_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "organization_slug_key" ON "organization" USING btree ("slug") WHERE "organization"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_account_provider_key" ON "auth_account" USING btree ("provider_id","account_id");--> statement-breakpoint
+CREATE INDEX "auth_account_user_idx" ON "auth_account" USING btree ("user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_session_token_key" ON "auth_session" USING btree ("token");--> statement-breakpoint
+CREATE INDEX "auth_session_user_idx" ON "auth_session" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "auth_session_expiry_idx" ON "auth_session" USING btree ("expires_at");--> statement-breakpoint
+CREATE INDEX "auth_verification_identifier_idx" ON "auth_verification" USING btree ("identifier","expires_at");--> statement-breakpoint
 CREATE INDEX "drug_catalog_generic_idx" ON "drug_catalog" USING btree ("generic_name");--> statement-breakpoint
 CREATE INDEX "drug_catalog_org_idx" ON "drug_catalog" USING btree ("organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "drug_catalog_nafdac_key" ON "drug_catalog" USING btree ("nafdac_number") WHERE "drug_catalog"."nafdac_number" IS NOT NULL AND "drug_catalog"."organization_id" IS NULL;--> statement-breakpoint
