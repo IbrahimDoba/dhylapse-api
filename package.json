@@ -17,7 +17,8 @@
     "db:up": "docker compose up -d",
     "db:verify": "psql \"$DATABASE_MIGRATION_URL\" -f src/db/verify.sql",
     "check:tenant": "node --env-file=.env scripts/tenant-check.ts",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:api": "node --env-file=.env scripts/api-check.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

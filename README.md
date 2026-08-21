@@ -9,7 +9,8 @@ Fastify + TypeScript + Postgres + Drizzle. Companion repo to the React frontend.
 Schema verified against Postgres 18. Fastify runs with tenant-scoped database
 access, boot-time configuration checks, and authentication: sign-up, sessions,
 workspace bootstrapping, and membership resolution work end to end. Inventory
-and the expiry engine are next.
+is in: products, batches, and a ledger-backed stock trail. CSV import and the
+expiry engine are next.
 
 ## Setup
 
@@ -102,6 +103,45 @@ POST /api/workspaces            { name } -> org, location, alert rules
 
 Requests select a workspace with the `X-Organization-Id` header. A header naming
 an organization the caller is not a member of is ignored, not honoured.
+
+## Inventory
+
+```
+GET  /api/locations
+GET  /api/products                 ?q= &limit= &cursor=
+POST /api/products                 { name, sku?, reorderPoint?, ... }
+GET  /api/batches                  ?withinDays= &locationId= &productId=
+POST /api/batches                  { productId, expiryDate, quantity, ... }
+POST /api/batches/:id/adjust       { quantityDelta, reason }
+GET  /api/batches/:id/movements    full ledger history
+```
+
+Three things worth knowing:
+
+**Stock only ever moves through the ledger.** `POST /api/batches` creates the
+row with a zero balance and applies the quantity as a `receipt` movement; a
+trigger maintains `quantity_on_hand`. There is no endpoint that writes a
+quantity directly, and corrections are compensating entries, never edits.
+
+**`expiryDate` accepts `YYYY-MM`.** Labels routinely print only a month, so
+`2026-11` is stored as `2026-11-30` with `expiryPrecision: "month"` — the UI can
+render "Nov 2026" instead of inventing a day.
+
+**Product quantity is derived**, summed across active batches. It is never
+stored in two places.
+
+Capabilities are checked per action, not per role — see `src/lib/permissions.ts`.
+Counter `staff` can receive stock and acknowledge alerts but cannot adjust
+balances or approve write-offs.
+
+## Checks
+
+```sh
+pnpm check          # typecheck
+pnpm db:verify      # 10 schema invariants (rolls back, safe on a live db)
+pnpm check:tenant   # tenant isolation through the app's own code path
+pnpm check:api      # 18 end-to-end API assertions via fastify inject()
+```
 
 ## Layout
 

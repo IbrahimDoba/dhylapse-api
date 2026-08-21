@@ -72,17 +72,30 @@ interface PgError {
 }
 
 function isPgError(e: unknown): e is PgError {
-  return typeof e === 'object' && e !== null && 'code' in e;
+  return typeof e === 'object' && e !== null && 'code' in e && typeof (e as PgError).code === 'string';
+}
+
+/**
+ * Drizzle wraps driver errors in DrizzleQueryError, so the SQLSTATE lives on
+ * `.cause` rather than the thrown object. Walk the chain rather than checking
+ * the top level — otherwise every constraint violation surfaces as a bare 500
+ * and the per-constraint messages below are dead code.
+ */
+function findPgError(err: unknown, depth = 0): PgError | null {
+  if (depth > 4 || typeof err !== 'object' || err === null) return null;
+  if (isPgError(err)) return err;
+  return findPgError((err as { cause?: unknown }).cause, depth + 1);
 }
 
 export function toHttpError(err: unknown): AppError | null {
   if (err instanceof AppError) return err;
-  if (!isPgError(err) || !err.code) return null;
+  const pg = findPgError(err);
+  if (!pg?.code) return null;
 
-  const constraint = err.constraint_name ?? err.constraint ?? '';
+  const constraint = pg.constraint_name ?? pg.constraint ?? '';
   const friendly = CONSTRAINT_MESSAGES[constraint];
 
-  switch (err.code) {
+  switch (pg.code) {
     case SQLSTATE.UNIQUE_VIOLATION:
       return new AppError(409, 'conflict', friendly ?? 'That record already exists.', constraint);
 
@@ -92,7 +105,7 @@ export function toHttpError(err: unknown): AppError | null {
       return new AppError(
         422,
         'invalid_state',
-        friendly ?? err.message ?? 'That change is not allowed.',
+        friendly ?? pg.message ?? 'That change is not allowed.',
         constraint,
       );
 

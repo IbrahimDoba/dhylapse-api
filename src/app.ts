@@ -7,6 +7,9 @@ import { env } from './env.ts';
 import { toHttpError } from './lib/errors.ts';
 import authPlugin from './plugins/auth.ts';
 import { healthRoutes } from './routes/health.ts';
+import { batchRoutes } from './routes/batches.ts';
+import { locationRoutes } from './routes/locations.ts';
+import { productRoutes } from './routes/products.ts';
 import { workspaceRoutes } from './routes/workspace.ts';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -85,6 +88,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(healthRoutes);
   await app.register(workspaceRoutes);
+  await app.register(locationRoutes);
+  await app.register(productRoutes);
+  await app.register(batchRoutes);
 
   return app;
 }
