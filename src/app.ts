@@ -8,6 +8,8 @@ import { toHttpError } from './lib/errors.ts';
 import authPlugin from './plugins/auth.ts';
 import { healthRoutes } from './routes/health.ts';
 import { batchRoutes } from './routes/batches.ts';
+import { dashboardRoutes } from './routes/dashboard.ts';
+import { organizationRoutes } from './routes/organization.ts';
 import { locationRoutes } from './routes/locations.ts';
 import { productRoutes } from './routes/products.ts';
 import { workspaceRoutes } from './routes/workspace.ts';
@@ -91,6 +93,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(locationRoutes);
   await app.register(productRoutes);
   await app.register(batchRoutes);
+  await app.register(dashboardRoutes);
+  await app.register(organizationRoutes);
 
   return app;
 }

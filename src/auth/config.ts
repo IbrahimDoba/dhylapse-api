@@ -66,6 +66,14 @@ export const auth = betterAuth({
         }
       : {},
 
+  /**
+   * Origins allowed to call the auth endpoints.
+   *
+   * This is easy to get wrong behind a dev proxy: the browser sends the
+   * frontend's origin (:5174) while the API listens on :4000, so an untrusted
+   * origin is rejected with a 403 that curl never reproduces — curl sends no
+   * Origin header at all. Keep this in step with wherever the app is served.
+   */
   trustedOrigins: env.CORS_ORIGIN === '*' ? [] : env.CORS_ORIGIN.split(',').map((s) => s.trim()),
 });
 

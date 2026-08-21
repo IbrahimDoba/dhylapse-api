@@ -104,6 +104,15 @@ POST /api/workspaces            { name } -> org, location, alert rules
 Requests select a workspace with the `X-Organization-Id` header. A header naming
 an organization the caller is not a member of is ignored, not honoured.
 
+## Workspace, staff, alerts
+
+```
+GET  /api/dashboard         summary counts + value at risk, one query
+GET  /api/workspace         org profile + locations
+GET  /api/staff             everyone with access
+GET  /api/alert-rules       the configured expiry ladder
+```
+
 ## Inventory
 
 ```

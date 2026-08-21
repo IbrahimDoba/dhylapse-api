@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { sql as raw } from 'drizzle-orm';
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from '@sinclair/typebox';
@@ -84,13 +85,25 @@ export const workspaceRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const { userId } = req.auth!;
       const body = req.body;
 
-      // Slug collisions are likely ("City Pharmacy"), so retry with a suffix
-      // rather than making the user pick a URL at signup.
+      /*
+       * Slug collisions are likely — "City Pharmacy" is not a rare name — so
+       * retry rather than making the user invent a URL at signup.
+       *
+       * The first few attempts use a readable counter, then fall back to a
+       * random suffix. A purely sequential scheme runs out: with -2..-5 the
+       * sixth pharmacy of the same name simply cannot register, which is a
+       * dead end the user can do nothing about.
+       */
       const base = slugify(body.name);
       let organizationId: string | undefined;
 
-      for (let attempt = 0; attempt < 5 && !organizationId; attempt++) {
-        const slug = attempt === 0 ? base : `${base}-${attempt + 1}`;
+      for (let attempt = 0; attempt < 8 && !organizationId; attempt++) {
+        const slug =
+          attempt === 0
+            ? base
+            : attempt < 4
+              ? `${base}-${attempt + 1}`
+              : `${base}-${randomBytes(3).toString('hex')}`;
         try {
           organizationId = await withUser(userId, async (tx) => {
             const rows = await tx.execute<{ bootstrap_organization: string }>(raw`

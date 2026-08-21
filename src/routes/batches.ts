@@ -149,6 +149,8 @@ export const batchRoutes: FastifyPluginAsyncTypebox = async (app) => {
         querystring: Type.Object({
           locationId: Type.Optional(Type.String({ format: 'uuid' })),
           productId: Type.Optional(Type.String({ format: 'uuid' })),
+          /** Matches product name, SKU, or lot number. */
+          q: Type.Optional(Type.String({ maxLength: 120 })),
           /** Only batches expiring within this many days. */
           withinDays: Type.Optional(Type.Integer({ minimum: 0, maximum: 3650 })),
           includeDepleted: Type.Boolean({ default: false }),
@@ -166,7 +168,7 @@ export const batchRoutes: FastifyPluginAsyncTypebox = async (app) => {
     },
     async (req) => {
       const scope = scopeWith(req, 'inventory.read');
-      const { locationId, productId, withinDays, includeDepleted, limit, cursor } = req.query;
+      const { locationId, productId, withinDays, includeDepleted, limit, cursor, q } = req.query;
       const after = cursor ? decodeCursor(cursor) : null;
       const afterDate = typeof after?.[0] === 'string' ? after[0] : null;
       const afterId = typeof after?.[1] === 'string' ? after[1] : null;
@@ -178,6 +180,10 @@ export const batchRoutes: FastifyPluginAsyncTypebox = async (app) => {
              AND (${includeDepleted} OR b.status = 'active')
              AND (${locationId ?? null}::uuid IS NULL OR b.location_id = ${locationId ?? null}::uuid)
              AND (${productId ?? null}::uuid  IS NULL OR b.product_id  = ${productId ?? null}::uuid)
+             AND (${q ?? null}::text IS NULL
+                  OR p.name        ILIKE '%' || ${q ?? null} || '%'
+                  OR p.sku         ILIKE '%' || ${q ?? null} || '%'
+                  OR b.batch_number ILIKE '%' || ${q ?? null} || '%')
              AND (${withinDays ?? null}::int IS NULL
                   OR b.effective_expiry_date
                      <= CURRENT_DATE + (${withinDays ?? 0}::int * INTERVAL '1 day'))
