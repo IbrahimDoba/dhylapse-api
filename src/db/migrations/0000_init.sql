@@ -298,7 +298,7 @@ CREATE TABLE "batch" (
 	"expiry_is_estimated" boolean DEFAULT false NOT NULL,
 	"manufactured_date" date,
 	"opened_at" timestamp with time zone,
-	"effective_expiry_date" date,
+	"effective_expiry_date" date NOT NULL,
 	"quantity_on_hand" bigint DEFAULT 0 NOT NULL,
 	"quantity_reserved" bigint DEFAULT 0 NOT NULL,
 	"quantity_received" bigint DEFAULT 0 NOT NULL,
@@ -1015,8 +1015,9 @@ CREATE INDEX "product_supplier_supplier_idx" ON "product_supplier" USING btree (
 CREATE INDEX "supplier_org_idx" ON "supplier" USING btree ("organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "supplier_org_code_key" ON "supplier" USING btree ("organization_id","code") WHERE "supplier"."code" IS NOT NULL AND "supplier"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "unit_of_measure_org_code_key" ON "unit_of_measure" USING btree ("organization_id","code");--> statement-breakpoint
-CREATE INDEX "batch_expiry_scan_idx" ON "batch" USING btree ("organization_id","location_id","expiry_date") WHERE "batch"."status" = 'active' AND "batch"."deleted_at" IS NULL;--> statement-breakpoint
-CREATE INDEX "batch_product_idx" ON "batch" USING btree ("product_id","expiry_date");--> statement-breakpoint
+CREATE INDEX "batch_expiry_scan_idx" ON "batch" USING btree ("organization_id","effective_expiry_date","id") WHERE "batch"."status" = 'active' AND "batch"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "batch_location_expiry_idx" ON "batch" USING btree ("organization_id","location_id","effective_expiry_date","id") WHERE "batch"."status" = 'active' AND "batch"."deleted_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "batch_product_idx" ON "batch" USING btree ("product_id","effective_expiry_date") WHERE "batch"."status" = 'active' AND "batch"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "batch_location_idx" ON "batch" USING btree ("location_id");--> statement-breakpoint
 CREATE INDEX "batch_supplier_idx" ON "batch" USING btree ("supplier_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "batch_natural_key" ON "batch" USING btree ("location_id","product_id","batch_number","expiry_date") WHERE "batch"."batch_number" IS NOT NULL AND "batch"."deleted_at" IS NULL;--> statement-breakpoint

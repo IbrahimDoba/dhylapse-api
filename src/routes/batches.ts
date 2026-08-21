@@ -38,8 +38,8 @@ const BATCH_SELECT = raw`
          b.batch_number AS "batchNumber",
          b.expiry_date::text AS "expiryDate",
          b.expiry_precision  AS "expiryPrecision",
-         COALESCE(b.effective_expiry_date, b.expiry_date)::text AS "effectiveExpiryDate",
-         (COALESCE(b.effective_expiry_date, b.expiry_date) - CURRENT_DATE)::int AS "daysRemaining",
+         b.effective_expiry_date::text AS "effectiveExpiryDate",
+         (b.effective_expiry_date - CURRENT_DATE)::int AS "daysRemaining",
          b.quantity_on_hand::int AS "quantityOnHand",
          b.status,
          b.unit_cost_minor::bigint AS "unitCostMinor",
@@ -179,12 +179,12 @@ export const batchRoutes: FastifyPluginAsyncTypebox = async (app) => {
              AND (${locationId ?? null}::uuid IS NULL OR b.location_id = ${locationId ?? null}::uuid)
              AND (${productId ?? null}::uuid  IS NULL OR b.product_id  = ${productId ?? null}::uuid)
              AND (${withinDays ?? null}::int IS NULL
-                  OR COALESCE(b.effective_expiry_date, b.expiry_date)
+                  OR b.effective_expiry_date
                      <= CURRENT_DATE + (${withinDays ?? 0}::int * INTERVAL '1 day'))
              AND (${afterDate}::date IS NULL
-                  OR (COALESCE(b.effective_expiry_date, b.expiry_date), b.id)
+                  OR (b.effective_expiry_date, b.id)
                      > (${afterDate}::date, ${afterId}::uuid))
-           ORDER BY COALESCE(b.effective_expiry_date, b.expiry_date), b.id
+           ORDER BY b.effective_expiry_date, b.id
            LIMIT ${limit + 1}
         `),
       );

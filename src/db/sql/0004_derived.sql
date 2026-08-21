@@ -71,7 +71,9 @@ CREATE TRIGGER stock_movement_immutable
 
 
 -- 2. Effective expiry = the earlier of the printed date and the
---    post-opening shelf life. A broached multi-dose vial expires on the
+--    post-opening shelf life. The column is NOT NULL and callers never supply
+--    it, so this trigger is what satisfies the constraint — it must exist
+--    before any insert. preflight() refuses to boot without it. A broached multi-dose vial expires on the
 --    earlier date, and alerting must follow whichever comes first.
 
 CREATE OR REPLACE FUNCTION compute_effective_expiry() RETURNS trigger

@@ -137,11 +137,54 @@ balances or approve write-offs.
 ## Checks
 
 ```sh
+pnpm test           # everything below, in order
 pnpm check          # typecheck
+pnpm test:unit      # 36 unit tests, no database
 pnpm db:verify      # 10 schema invariants (rolls back, safe on a live db)
 pnpm check:tenant   # tenant isolation through the app's own code path
 pnpm check:api      # 18 end-to-end API assertions via fastify inject()
 ```
+
+### Performance
+
+```sh
+pnpm seed:perf 200000   # 3 orgs x 200k batches (~600k rows, 367 MB, ~20s)
+pnpm perf               # hot-path timings + query-plan assertions
+```
+
+Every measurement runs through `withTenant` as the unprivileged role, so RLS is
+active — timing raw SQL as a superuser would flatter all of it. Three tenants,
+not one, because an isolation predicate costs nothing when there is no other
+tenant's data to filter out.
+
+Each check asserts a wall-clock budget **and** the query plan. The plan
+assertion is the one that matters: a query that is fast on 20k rows while
+sequential-scanning is a query that falls over at 600k, and it passes a timing
+test right up until it doesn't. At 600k batches:
+
+| query | p50 | budget |
+|---|---|---|
+| expiry scan, 90-day window | 0.7ms | 8ms |
+| inventory list, first page (FEFO) | 0.6ms | 8ms |
+| inventory list, page 200 (keyset) | 0.9ms | 8ms |
+| product rollup (LATERAL per page) | 8.1ms | 25ms |
+| value at risk, 30-day window | 28ms | 40ms |
+| ledger write (row-locked) | 0.7ms | 25ms |
+
+Three problems the perf suite found that the correctness tests could not:
+
+1. **The expiry index was never used.** It was keyed on `expiry_date` while
+   every read ordered by `COALESCE(effective_expiry_date, expiry_date)`.
+   Postgres filtered the whole tenant and top-N sorted the remainder.
+   `effective_expiry_date` is now `NOT NULL` (the trigger always sets it) and
+   indexed directly.
+2. **Keyset pagination degraded to O(offset).** A row-wise cursor comparison
+   only becomes an `Index Cond` when the leading key is a plain column and the
+   types match exactly. One implicit `date` → `timestamp` coercion pushed it
+   into a `Filter`: 0.03ms → 46ms, same results. `perf-check` now asserts the
+   cursor appears in `Index Cond`.
+3. **The product rollup aggregated every batch before applying LIMIT.**
+   Rewritten as a `LATERAL` over the already-paginated page: 150ms → 8.1ms.
 
 ## Layout
 

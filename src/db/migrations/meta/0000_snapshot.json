@@ -1,5 +1,5 @@
 {
-  "id": "2a3973a9-ddf5-4153-9c70-8508d5bdd5cc",
+  "id": "9528592a-e913-42b9-b8be-7d9ea1b7eb07",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2717,7 +2717,7 @@
           "name": "effective_expiry_date",
           "type": "date",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "quantity_on_hand": {
           "name": "quantity_on_hand",
@@ -2843,13 +2843,47 @@
               "nulls": "last"
             },
             {
+              "expression": "effective_expiry_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"batch\".\"status\" = 'active' AND \"batch\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "batch_location_expiry_idx": {
+          "name": "batch_location_expiry_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "location_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "expiry_date",
+              "expression": "effective_expiry_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2871,13 +2905,14 @@
               "nulls": "last"
             },
             {
-              "expression": "expiry_date",
+              "expression": "effective_expiry_date",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
+          "where": "\"batch\".\"status\" = 'active' AND \"batch\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

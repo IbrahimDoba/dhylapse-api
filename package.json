@@ -18,7 +18,11 @@
     "db:verify": "psql \"$DATABASE_MIGRATION_URL\" -f src/db/verify.sql",
     "check:tenant": "node --env-file=.env scripts/tenant-check.ts",
     "lint": "eslint .",
-    "check:api": "node --env-file=.env scripts/api-check.ts"
+    "check:api": "node --env-file=.env scripts/api-check.ts",
+    "test:unit": "node --test \"src/**/*.test.ts\"",
+    "seed:perf": "node --env-file=.env scripts/seed-perf.ts",
+    "perf": "node --env-file=.env scripts/perf-check.ts",
+    "test": "pnpm test:unit && pnpm db:verify && pnpm check:tenant && pnpm check:api"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

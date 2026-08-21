@@ -78,7 +78,19 @@ export const batch = pgTable(
      * alerting switches to whichever comes first.
      */
     openedAt: timestamp('opened_at', { withTimezone: true, mode: 'date' }),
-    effectiveExpiryDate: date('effective_expiry_date'),
+    /**
+     * The date alerting actually uses: the earlier of the printed date and any
+     * post-opening shelf life. Maintained by the batch_effective_expiry
+     * trigger, which runs BEFORE INSERT — so NOT NULL is satisfied even though
+     * callers never supply it.
+     *
+     * NOT NULL is load-bearing, not tidiness. While this was nullable every
+     * query had to read COALESCE(effective_expiry_date, expiry_date), and
+     * Postgres cannot use a row-wise cursor comparison as an index condition
+     * when the leading key is an expression — keyset pagination degraded to a
+     * full scan of the tenant's index.
+     */
+    effectiveExpiryDate: date('effective_expiry_date').notNull(),
 
     /** Cached balance in base units. Source of truth is stockMovement. */
     quantityOnHand: qty('quantity_on_hand').notNull().default(0),
@@ -123,13 +135,34 @@ export const batch = pgTable(
   },
   (t) => [
     /**
-     * The index the whole product runs on: "what is expiring at this location".
-     * Partial, because expired/disposed lots are dead weight in the hot path.
+     * The index the whole product runs on: "what is expiring next".
+     *
+     * Keyed on effective_expiry_date — the date reads actually order by, since
+     * a broached vial expires before its printed date. Indexing expiry_date
+     * instead leaves Postgres filtering the whole tenant and top-N sorting the
+     * remainder: fast at 20k lots, quietly linear from there.
+     *
+     * location_id is deliberately NOT a leading column: ordering by expiry
+     * matters on every query, filtering by location only on some, and a
+     * middle column would block the range scan.
+     *
+     * Partial, because expired and disposed lots are dead weight in the scan.
      */
     index('batch_expiry_scan_idx')
-      .on(t.organizationId, t.locationId, t.expiryDate)
+      .on(t.organizationId, t.effectiveExpiryDate, t.id)
       .where(sql`${t.status} = 'active' AND ${t.deletedAt} IS NULL`),
-    index('batch_product_idx').on(t.productId, t.expiryDate),
+    /** Chains filter by branch; this keeps that path off the org-wide index. */
+    index('batch_location_expiry_idx')
+      .on(t.organizationId, t.locationId, t.effectiveExpiryDate, t.id)
+      .where(sql`${t.status} = 'active' AND ${t.deletedAt} IS NULL`),
+    /**
+     * Serves the per-product rollup on the inventory list, which does one
+     * bounded lookup per product rather than aggregating the whole table.
+     * Partial and covering, so it answers from the index alone.
+     */
+    index('batch_product_idx')
+      .on(t.productId, t.effectiveExpiryDate)
+      .where(sql`${t.status} = 'active' AND ${t.deletedAt} IS NULL`),
     index('batch_location_idx').on(t.locationId),
     index('batch_supplier_idx').on(t.supplierId),
     /** Same lot received twice into the same place is a duplicate, not a new batch. */
