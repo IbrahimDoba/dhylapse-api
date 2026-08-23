@@ -22,23 +22,26 @@ if [ "${1:-}" = "--reset" ]; then
   psql "$ADMIN_URL" -q -c "CREATE DATABASE \"$DB_NAME\""
 fi
 
-echo "==> 1/6 extensions"
+echo "==> 1/7 extensions"
 psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -q -f src/db/sql/0001_extensions.sql
 
-echo "==> 2/6 migrations"
+echo "==> 2/7 migrations"
 npx drizzle-kit migrate >/dev/null
 
-echo "==> 3/6 row-level security"
+echo "==> 3/7 row-level security"
 psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -q -f src/db/sql/0002_rls.sql
 
-echo "==> 4/6 ledger triggers and constraints"
+echo "==> 4/7 ledger triggers and constraints"
 psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -q -f src/db/sql/0004_derived.sql
 
-echo "==> 5/6 application role"
+echo "==> 5/7 application role"
 psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -q -f src/db/sql/0005_app_role.sql
 
-echo "==> 6/6 signup bootstrap function"
+echo "==> 6/7 signup bootstrap function"
 psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -q -f src/db/sql/0006_bootstrap.sql
+
+echo "==> 7/7 expiry scan support"
+psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -q -f src/db/sql/0007_scan.sql
 
 TABLES=$(psql "$DATABASE_MIGRATION_URL" -tAc \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")

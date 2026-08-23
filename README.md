@@ -104,6 +104,35 @@ POST /api/workspaces            { name } -> org, location, alert rules
 Requests select a workspace with the `X-Organization-Id` header. A header naming
 an organization the caller is not a member of is ignored, not honoured.
 
+## Expiry alerts
+
+```
+GET  /api/alerts                  ?status=open|acknowledged|all
+POST /api/alerts/:id/acknowledge
+GET  /api/notifications           in-app feed for the signed-in user
+POST /api/alerts/scan             run the scan on demand (owner only)
+```
+
+The scan runs hourly and does real work at most once a day, guarded by a
+Postgres advisory lock so only one instance scans when several are deployed.
+`POST /api/alerts/scan` exists because "wait until tonight" is a miserable way
+to verify alerting.
+
+**One rung per batch per scan.** A batch fires the narrowest threshold it has
+entered — 5 days out fires the 7-day rule, not 180/90/30/7 all at once. As it
+ages it climbs the ladder, one alert per rung, each exactly once. The unique
+index on `(alert_rule_id, batch_id)` is what guarantees that: a crash mid-run,
+a retry, or two workers racing all converge on the same result.
+
+**Scope is most-specific-wins.** A rule on one product replaces the
+organization ladder for that product rather than adding a second alert.
+
+The scan is cross-tenant, which RLS forbids — so it enumerates organizations
+through a SECURITY DEFINER function that returns nothing else, then processes
+each tenant through the normal `withTenant` path. A worker role with
+`BYPASSRLS` would be simpler and much worse: every query it ran would be
+unprotected forever, for the convenience of one enumeration.
+
 ## Workspace, staff, alerts
 
 ```

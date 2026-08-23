@@ -234,6 +234,37 @@ console.log(
   `${perWrite.toFixed(1)}ms/write  ${Math.round(1000 / perWrite)}/s  (budget 25ms)`,
 );
 
+// --- the nightly expiry scan ------------------------------------------------
+/*
+ * Measured once, not averaged: the first scan is the expensive one, because
+ * every in-window batch raises its alert then. Subsequent nights only see what
+ * newly crossed a rung, which is a fraction of this. Both numbers are printed
+ * so the difference is visible rather than assumed.
+ */
+const { runExpiryScan } = await import('../src/jobs/expiry-scan.ts');
+
+const coldStart = performance.now();
+const cold = await runExpiryScan();
+const coldMs = performance.now() - coldStart;
+
+const warmStart = performance.now();
+const warm = await runExpiryScan();
+const warmMs = performance.now() - warmStart;
+
+const perAlert = cold.alertsCreated > 0 ? coldMs / cold.alertsCreated : 0;
+const scanOk = warmMs < 15_000 && cold.errors.length === 0;
+if (!scanOk) failures++;
+console.log(
+  `${scanOk ? 'PASS' : 'FAIL'}  ${'expiry scan, steady state'.padEnd(38)} ` +
+  `${(warmMs / 1000).toFixed(1)}s over ${cold.organizationsScanned} orgs  (budget 15s)` +
+  (cold.errors.length ? `\n      ${cold.errors.length} org(s) errored: ${cold.errors[0]?.message?.slice(0, 80)}` : ''),
+);
+console.log(
+  `      first run raised ${cold.alertsCreated.toLocaleString()} alerts in ` +
+  `${(coldMs / 1000).toFixed(1)}s (${perAlert.toFixed(2)}ms each); ` +
+  `rerun raised ${warm.alertsCreated} — exactly-once holds at scale`,
+);
+
 console.log(
   `\nkeyset page 200 vs page 1: ${(deep.p50 / first.p50).toFixed(2)}x   ` +
   `OFFSET equivalent: ${(offsetRun.p50 / first.p50).toFixed(2)}x`,

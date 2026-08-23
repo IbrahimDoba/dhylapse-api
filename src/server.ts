@@ -2,6 +2,7 @@ import { closeDb } from './db/client.ts';
 import { preflight } from './db/preflight.ts';
 import { env } from './env.ts';
 import { buildApp } from './app.ts';
+import { startScheduler } from './jobs/scheduler.ts';
 
 const app = await buildApp();
 
@@ -16,6 +17,8 @@ try {
 
 await app.listen({ port: env.PORT, host: env.HOST });
 
+const scheduler = startScheduler(app);
+
 /**
  * Graceful shutdown. Railway/Render/Fly send SIGTERM on deploy; without this
  * the process dies mid-request and in-flight writes are cut off.
@@ -27,6 +30,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     shuttingDown = true;
     app.log.info({ signal }, 'shutting down');
     try {
+      scheduler.stop();
       await app.close();
       await closeDb();
       process.exit(0);

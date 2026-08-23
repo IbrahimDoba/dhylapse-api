@@ -25,10 +25,15 @@ let cookie = '';
 const json = { 'content-type': 'application/json' };
 
 async function call(method: 'GET' | 'POST', url: string, payload?: unknown) {
+  /*
+   * Only send content-type when there is a body. Declaring JSON with an empty
+   * body is a 400 from Fastify, which is correct — but it made the harness
+   * fail on every POST that takes no input.
+   */
   const res = await app.inject({
     method,
     url,
-    headers: { ...json, ...(cookie ? { cookie } : {}) },
+    headers: { ...(payload ? json : {}), ...(cookie ? { cookie } : {}) },
     ...(payload ? { payload: payload as object } : {}),
   });
   const setCookie = res.headers['set-cookie'];
@@ -106,6 +111,64 @@ check('product quantity derived from batches', p?.quantityOnHand === 200, `qty $
 
 const soon = await call('GET', '/api/batches?withinDays=1');
 check('expiry window filters correctly', soon.body?.batches?.length === 0, 'nothing due in 1 day');
+
+// --- expiry alert engine ----------------------------------------------------
+// A batch per band, so threshold selection is unambiguous.
+const inDays = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+const alertProduct = (await call('POST', '/api/products', { name: `Insulin ${stamp}` })).body?.id;
+for (const [days, lot] of [[5, 'B5'], [20, 'B20'], [60, 'B60'], [150, 'B150'], [400, 'B400']] as const) {
+  await call('POST', '/api/batches', {
+    productId: alertProduct, batchNumber: `${lot}-${stamp}`,
+    expiryDate: inDays(days), quantity: 10, unitCostMinor: 100000, currency: 'NGN',
+  });
+}
+
+const scan1 = await call('POST', '/api/alerts/scan');
+check('scan raises alerts', scan1.body?.alertsCreated >= 4, `${scan1.body?.alertsCreated} created`);
+/*
+ * A scan where every organization threw was previously reported as a success
+ * with zero alerts — the worst possible failure for an alerting system,
+ * because nothing looks wrong. Assert on failures, not just on the count.
+ */
+check('scan reports no organization failures', scan1.body?.organizationsFailed === 0,
+  (scan1.body?.errors ?? []).join(' | ').slice(0, 90) || 'clean');
+
+const scan2 = await call('POST', '/api/alerts/scan');
+check('scan is exactly-once on rerun', scan2.body?.alertsCreated === 0, `${scan2.body?.alertsCreated} created`);
+
+const inbox = await call('GET', '/api/alerts?limit=200');
+// Only the band fixtures — the Metformin lot from the inventory section shares
+// this run's timestamp and legitimately raises an alert of its own.
+const mine = (inbox.body?.alerts ?? []).filter((a: any) =>
+  /^B\d+-/.test(String(a.batchNumber ?? '')) && String(a.batchNumber).endsWith(String(stamp)));
+const rung = (lot: string) => mine.find((a: any) => a.batchNumber?.startsWith(lot))?.thresholdDays;
+
+check('5 days out fires the 7-day rung', rung('B5') === 7, `got ${rung('B5')}`);
+check('20 days out fires the 30-day rung', rung('B20') === 30, `got ${rung('B20')}`);
+check('60 days out fires the 90-day rung', rung('B60') === 90, `got ${rung('B60')}`);
+check('150 days out fires the 180-day rung', rung('B150') === 180, `got ${rung('B150')}`);
+check('400 days out fires nothing', rung('B400') === undefined, 'outside every band');
+/*
+ * The property that matters most: one alert per batch per scan. Firing every
+ * threshold whose window has passed would deliver 180/90/30/7 the same night
+ * for short-dated stock — the fatigue the ladder exists to prevent.
+ */
+check('one alert per batch, not one per threshold', mine.length === 4, `${mine.length} alerts for 5 batches`);
+
+const bundle = await call('GET', '/api/notifications');
+check('alerts bundle into one notification', (bundle.body?.notifications ?? []).length >= 1,
+  bundle.body?.notifications?.[0]?.subject);
+
+const firstAlert = mine[0];
+const ack = await call('POST', `/api/alerts/${firstAlert.id}/acknowledge`);
+check('acknowledge succeeds', ack.body?.status === 'acknowledged');
+const ackTwice = await call('POST', `/api/alerts/${firstAlert.id}/acknowledge`);
+check('acknowledging twice is rejected', ackTwice.status === 404, ackTwice.body?.error);
 
 // --- authorization ----------------------------------------------------------
 const anon = await app.inject({ method: 'GET', url: '/api/products' });
