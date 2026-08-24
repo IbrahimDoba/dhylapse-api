@@ -23,7 +23,8 @@
     "seed:perf": "node --env-file=.env scripts/seed-perf.ts",
     "perf": "node --env-file=.env scripts/perf-check.ts",
     "test": "pnpm test:unit && pnpm db:verify && pnpm check:tenant && pnpm check:api",
-    "seed:demo": "node --env-file=.env scripts/seed-demo.ts"
+    "seed:demo": "node --env-file=.env scripts/seed-demo.ts",
+    "db:setup": "node --env-file-if-exists=.env src/db/migrate.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

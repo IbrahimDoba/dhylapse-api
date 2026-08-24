@@ -1,0 +1,43 @@
+# Render blueprint. `render blueprint launch`, or point a new Blueprint at the
+# repo. Postgres 18 is required — the schema uses native uuidv7().
+services:
+  - type: web
+    name: dhylapse-api
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+
+      # The app connects as an UNPRIVILEGED role so row-level security applies.
+      # Pointing this at the owner connection silently disables tenant
+      # isolation; the server runs a preflight check and refuses to boot.
+      # Set by hand after the first deploy creates dhylapse_app — see
+      # docs/DEPLOY.md, this is the one step that is not automatic.
+      - key: DATABASE_URL
+        sync: false
+
+      # Owner connection. Used only by the migration step.
+      - key: DATABASE_MIGRATION_URL
+        fromDatabase:
+          name: dhylapse-db
+          property: connectionString
+
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+
+databases:
+  - name: dhylapse-db
+    plan: basic-256mb
+    postgresMajorVersion: "18"

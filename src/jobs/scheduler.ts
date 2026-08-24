@@ -1,6 +1,7 @@
 import { sql as raw } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../db/client.ts';
+import { deliverQueuedEmails } from './deliver-notifications.ts';
 import { runExpiryScan } from './expiry-scan.ts';
 
 /**
@@ -23,8 +24,10 @@ import { runExpiryScan } from './expiry-scan.ts';
 
 /** Arbitrary but fixed — any other advisory lock in the app must not reuse it. */
 const SCAN_LOCK_KEY = 4_812_355;
+const DELIVERY_LOCK_KEY = 4_812_356;
 
 const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
 
 export interface SchedulerHandle {
   stop: () => void;
@@ -71,6 +74,31 @@ async function attemptScan(app: FastifyInstance): Promise<void> {
   }
 }
 
+/**
+ * Drains the email queue.
+ *
+ * Runs far more often than the scan: the scan produces work once a day, but a
+ * retry after a provider blip should go out in minutes, not tomorrow. Its own
+ * lock, so a long scan never blocks delivery.
+ */
+async function attemptDelivery(app: FastifyInstance): Promise<void> {
+  const [lock] = await db.execute<{ acquired: boolean }>(
+    raw`SELECT pg_try_advisory_lock(${DELIVERY_LOCK_KEY}) AS acquired`,
+  );
+  if (!lock?.acquired) return;
+
+  try {
+    const result = await deliverQueuedEmails();
+    if (result.attempted > 0) {
+      app.log.info(result, 'notification delivery finished');
+    }
+  } catch (err) {
+    app.log.error({ err }, 'notification delivery threw');
+  } finally {
+    await db.execute(raw`SELECT pg_advisory_unlock(${DELIVERY_LOCK_KEY})`);
+  }
+}
+
 export function startScheduler(app: FastifyInstance): SchedulerHandle {
   // Checked hourly rather than fired once a day: a process that restarts at
   // 03:05 would otherwise miss a 03:00 slot entirely, and the 20-hour guard
@@ -78,16 +106,22 @@ export function startScheduler(app: FastifyInstance): SchedulerHandle {
   const timer = setInterval(() => void attemptScan(app), HOUR);
   timer.unref();
 
+  const deliveryTimer = setInterval(() => void attemptDelivery(app), 2 * MINUTE);
+  deliveryTimer.unref();
+
   // A short delay on boot keeps startup fast and avoids every instance in a
   // rolling deploy contending for the lock at the same instant.
   const initial = setTimeout(() => void attemptScan(app), 30_000);
   initial.unref();
 
-  app.log.info('expiry scan scheduler started (hourly check, at most once per day)');
+  app.log.info(
+    'scheduler started — expiry scan hourly (at most once per day), email delivery every 2 minutes',
+  );
 
   return {
     stop: () => {
       clearInterval(timer);
+      clearInterval(deliveryTimer);
       clearTimeout(initial);
     },
   };

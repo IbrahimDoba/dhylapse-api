@@ -54,6 +54,7 @@ BEGIN
   RETURN NEW;
 END $$;
 
+DROP TRIGGER IF EXISTS stock_movement_apply ON stock_movement;
 CREATE TRIGGER stock_movement_apply
   BEFORE INSERT ON stock_movement
   FOR EACH ROW EXECUTE FUNCTION apply_stock_movement();
@@ -65,6 +66,7 @@ BEGIN
   RAISE EXCEPTION 'stock_movement is append-only; insert a compensating movement instead';
 END $$;
 
+DROP TRIGGER IF EXISTS stock_movement_immutable ON stock_movement;
 CREATE TRIGGER stock_movement_immutable
   BEFORE UPDATE OR DELETE ON stock_movement
   FOR EACH ROW EXECUTE FUNCTION reject_ledger_mutation();
@@ -103,25 +105,47 @@ BEGIN
   RETURN NEW;
 END $$;
 
+DROP TRIGGER IF EXISTS batch_effective_expiry ON batch;
 CREATE TRIGGER batch_effective_expiry
   BEFORE INSERT OR UPDATE OF expiry_date, opened_at, product_id ON batch
   FOR EACH ROW EXECUTE FUNCTION compute_effective_expiry();
 
 
 -- 3. Guard rails the application must not be trusted to remember.
-ALTER TABLE batch
-  ADD CONSTRAINT batch_quantity_non_negative CHECK (quantity_on_hand >= 0),
-  ADD CONSTRAINT batch_reserved_within_hand  CHECK (quantity_reserved BETWEEN 0 AND quantity_on_hand),
-  ADD CONSTRAINT batch_expiry_after_manufacture
-    CHECK (manufactured_date IS NULL OR expiry_date > manufactured_date);
+-- Guarded so the file re-applies cleanly; ADD CONSTRAINT has no
+-- IF NOT EXISTS, and this runs on every deploy.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'batch_quantity_non_negative') THEN
+    ALTER TABLE batch ADD CONSTRAINT batch_quantity_non_negative CHECK (quantity_on_hand >= 0);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'batch_reserved_within_hand') THEN
+    ALTER TABLE batch ADD CONSTRAINT batch_reserved_within_hand CHECK (quantity_reserved BETWEEN 0 AND quantity_on_hand);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'batch_expiry_after_manufacture') THEN
+    ALTER TABLE batch ADD CONSTRAINT batch_expiry_after_manufacture CHECK (manufactured_date IS NULL OR expiry_date > manufactured_date);
+  END IF;
+END $$;
 
-ALTER TABLE stock_movement
-  ADD CONSTRAINT stock_movement_delta_non_zero CHECK (quantity_delta <> 0);
+-- Guarded so the file re-applies cleanly; ADD CONSTRAINT has no
+-- IF NOT EXISTS, and this runs on every deploy.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'stock_movement_delta_non_zero') THEN
+    ALTER TABLE stock_movement ADD CONSTRAINT stock_movement_delta_non_zero CHECK (quantity_delta <> 0);
+  END IF;
+END $$;
 
-ALTER TABLE alert_rule
-  ADD CONSTRAINT alert_rule_expiry_needs_threshold
-    CHECK (kind <> 'expiry' OR threshold_days IS NOT NULL);
+-- Guarded so the file re-applies cleanly; ADD CONSTRAINT has no
+-- IF NOT EXISTS, and this runs on every deploy.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'alert_rule_expiry_needs_threshold') THEN
+    ALTER TABLE alert_rule ADD CONSTRAINT alert_rule_expiry_needs_threshold CHECK (kind <> 'expiry' OR threshold_days IS NOT NULL);
+  END IF;
+END $$;
 
-ALTER TABLE stock_transfer
-  ADD CONSTRAINT stock_transfer_distinct_locations
-    CHECK (from_location_id <> to_location_id);
+-- Guarded so the file re-applies cleanly; ADD CONSTRAINT has no
+-- IF NOT EXISTS, and this runs on every deploy.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'stock_transfer_distinct_locations') THEN
+    ALTER TABLE stock_transfer ADD CONSTRAINT stock_transfer_distinct_locations CHECK (from_location_id <> to_location_id);
+  END IF;
+END $$;

@@ -172,6 +172,15 @@ Capabilities are checked per action, not per role — see `src/lib/permissions.t
 Counter `staff` can receive stock and acknowledge alerts but cannot adjust
 balances or approve write-offs.
 
+## Deploying
+
+See [docs/DEPLOY.md](docs/DEPLOY.md). One container, one Postgres 18 database.
+`Dockerfile`, `render.yaml` and `railway.json` are here.
+
+The one thing to get right: the app must connect as `dhylapse_app`, never the
+database owner, or RLS is silently disabled. The server refuses to boot
+otherwise, which makes the first deploy a two-pass process — documented.
+
 ## Demo data
 
 ```sh

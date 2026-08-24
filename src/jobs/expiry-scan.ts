@@ -166,12 +166,21 @@ async function notifyForEvents(
   const idsJson = JSON.stringify(eventIds);
 
   const [summary] = await tx.execute<{
-    total: number; urgent: number; value_minor: number; currency: string; headline: string;
+    total: number; critical: number; urgent: number;
+    value_minor: number; currency: string; headline: string;
   }>(raw`
     WITH ids AS (
       SELECT (value #>> '{}')::uuid AS id FROM jsonb_array_elements(${idsJson}::jsonb)
     )
     SELECT count(*)::int AS total,
+           -- Two counts, because they answer different questions. critical is
+           -- literally the 7-day rung and is what the subject line claims;
+           -- urgent is 7-or-30 and decides immediate vs digest. Using one
+           -- number for both put "17 batches expiring within 7 days" on an
+           -- email whose body listed 25 across every band.
+           -- (SQL line comments here, not /* */ with backticks — backticks
+           --  inside a template literal terminate the string.)
+           count(*) FILTER (WHERE ae.severity = 1)::int AS critical,
            count(*) FILTER (WHERE ae.severity <= 2)::int AS urgent,
            COALESCE(SUM(ae.value_at_risk_minor), 0)::bigint AS value_minor,
            COALESCE(MAX(ae.currency), 'NGN') AS currency,
@@ -186,9 +195,10 @@ async function notifyForEvents(
 
   const total = summary?.total ?? 0;
   const urgent = summary?.urgent ?? 0;
+  const critical = summary?.critical ?? 0;
   const subject =
-    urgent > 0
-      ? `${urgent} urgent expiry alert${urgent === 1 ? '' : 's'}`
+    critical > 0
+      ? `${critical} batch${critical === 1 ? '' : 'es'} expiring within 7 days`
       : `${total} batch${total === 1 ? '' : 'es'} approaching expiry`;
 
   let queued = 0;
@@ -204,6 +214,7 @@ async function notifyForEvents(
         ${JSON.stringify({
           total,
           urgent,
+          critical,
           valueAtRiskMinor: summary?.value_minor ?? 0,
           currency: summary?.currency ?? 'NGN',
           headline: summary?.headline ?? null,

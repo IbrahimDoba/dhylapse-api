@@ -40,6 +40,16 @@ const EnvSchema = Type.Object({
   /** Google OAuth is optional — omit both to run with email+password only. */
   GOOGLE_CLIENT_ID: Type.Optional(Type.String()),
   GOOGLE_CLIENT_SECRET: Type.Optional(Type.String()),
+
+  /**
+   * Transactional email. Without a key the sender logs instead of sending, so
+   * the whole delivery path — queueing, retry, status — still runs in
+   * development rather than being skipped and untested until launch day.
+   */
+  RESEND_API_KEY: Type.Optional(Type.String()),
+  EMAIL_FROM: Type.String({ default: 'Dhylapse <alerts@dhylapse.app>' }),
+  /** Absolute base for links in emails; falls back to the auth URL. */
+  PUBLIC_APP_URL: Type.Optional(Type.String()),
 });
 
 function load() {
@@ -56,6 +66,9 @@ function load() {
     BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    EMAIL_FROM: process.env.EMAIL_FROM,
+    PUBLIC_APP_URL: process.env.PUBLIC_APP_URL,
   };
 
   // Drop unset keys so schema defaults apply, then coerce numeric strings.

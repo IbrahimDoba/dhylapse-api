@@ -170,6 +170,26 @@ check('acknowledge succeeds', ack.body?.status === 'acknowledged');
 const ackTwice = await call('POST', `/api/alerts/${firstAlert.id}/acknowledge`);
 check('acknowledging twice is rejected', ackTwice.status === 404, ackTwice.body?.error);
 
+// --- email delivery ---------------------------------------------------------
+const deliver = await call('POST', '/api/alerts/deliver');
+check('email queue drains', deliver.status === 200 && deliver.body?.sent >= 1,
+  `${deliver.body?.sent} sent via ${deliver.body?.provider}`);
+check('nothing abandoned on a good address', deliver.body?.abandoned === 0);
+
+const drained = await call('POST', '/api/alerts/deliver');
+check('drained queue is a no-op', drained.body?.attempted === 0, `${drained.body?.attempted} attempted`);
+
+/*
+ * The subject claims a 7-day count; the body reports the total across every
+ * band. Reusing one number for both put "17 batches expiring within 7 days"
+ * on an email listing 25 — a wrong figure in an alert discredits every other
+ * number in it.
+ */
+const notif = await call('GET', '/api/notifications');
+const payload = notif.body?.notifications?.[0]?.payload;
+check('digest separates critical from total', payload?.critical <= payload?.total,
+  `critical ${payload?.critical} of ${payload?.total}`);
+
 // --- authorization ----------------------------------------------------------
 const anon = await app.inject({ method: 'GET', url: '/api/products' });
 check('anonymous read rejected', anon.statusCode === 401, `HTTP ${anon.statusCode}`);

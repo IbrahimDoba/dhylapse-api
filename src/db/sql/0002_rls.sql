@@ -32,8 +32,12 @@ $$;
 -- Readable when it is the selected tenant, OR when the caller is an active
 -- member of it — that second clause is what makes an org switcher possible
 -- without exposing anything the user isn't already entitled to see.
+-- Policies are dropped first so the whole file can be re-applied. Deploys run
+-- this on every boot, and a CREATE POLICY that fails on the second run means
+-- the second container never starts.
 ALTER TABLE organization ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON organization;
 CREATE POLICY tenant_isolation ON organization
   USING (
     id = current_org_id()
@@ -74,6 +78,7 @@ BEGIN
     -- FORCE applies the policy to the table owner too, so a migration or an
     -- admin script can't quietly bypass isolation.
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);
     EXECUTE format($f$
       CREATE POLICY tenant_isolation ON %I
         USING (organization_id = current_org_id())
@@ -87,6 +92,7 @@ END $$;
 -- row is the caller's own.
 ALTER TABLE membership ENABLE ROW LEVEL SECURITY;
 ALTER TABLE membership FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON membership;
 CREATE POLICY tenant_isolation ON membership
   USING (organization_id = current_org_id() OR user_id = current_user_id())
   WITH CHECK (organization_id = current_org_id());
@@ -101,6 +107,7 @@ BEGIN
   FOREACH t IN ARRAY ARRAY['drug_catalog', 'recall', 'audit_log', 'job_run'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_or_global ON %I', t);
     EXECUTE format($f$
       CREATE POLICY tenant_or_global ON %I
         USING (organization_id IS NULL OR organization_id = current_org_id())

@@ -2,8 +2,10 @@ import { sql as raw } from 'drizzle-orm';
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from '@sinclair/typebox';
 import { withTenant } from '../db/tenant.ts';
+import { deliverQueuedEmails } from '../jobs/deliver-notifications.ts';
 import { runExpiryScan } from '../jobs/expiry-scan.ts';
 import { AppError } from '../lib/errors.ts';
+import { emailProvider } from '../lib/email.ts';
 import { scopeWith } from '../lib/scope.ts';
 
 const AlertSchema = Type.Object({
@@ -25,6 +27,30 @@ const AlertSchema = Type.Object({
 });
 
 export const alertRoutes: FastifyPluginAsyncTypebox = async (app) => {
+  /** Drain the email queue now instead of waiting for the next sweep. */
+  app.post(
+    '/api/alerts/deliver',
+    {
+      preHandler: app.requireOrg,
+      schema: {
+        response: {
+          200: Type.Object({
+            attempted: Type.Integer(),
+            sent: Type.Integer(),
+            failed: Type.Integer(),
+            abandoned: Type.Integer(),
+            provider: Type.String(),
+          }),
+        },
+      },
+    },
+    async (req) => {
+      scopeWith(req, 'org.manage');
+      const result = await deliverQueuedEmails();
+      return { ...result, provider: emailProvider };
+    },
+  );
+
   /** The alert inbox. */
   app.get(
     '/api/alerts',
