@@ -104,6 +104,35 @@ POST /api/workspaces            { name } -> org, location, alert rules
 Requests select a workspace with the `X-Organization-Id` header. A header naming
 an organization the caller is not a member of is ignored, not honoured.
 
+## Suppliers and recovery
+
+```
+GET  /api/suppliers                    with return terms
+POST /api/suppliers
+GET  /api/batches/:id/options          is this returnable, and for how much?
+GET  /api/dispositions                 + recovery summary
+POST /api/dispositions                 propose
+POST /api/dispositions/:id/approve
+POST /api/dispositions/:id/complete    moves stock, records what came back
+```
+
+This is the half that recovers money rather than reporting loss. An expiry
+alert says something bad is coming; a disposition records what was done about
+it and how much came back.
+
+`/options` answers the question the alert raises but cannot: a lot 40 days from
+expiry against a supplier with a 90-day return window has already missed it,
+and saying so before someone wastes a phone call is the point. Expired stock is
+reported as expired rather than as out-of-window — the window test is trivially
+true once a date has passed, and "discount or dispose" is wrong advice for
+stock that must be destroyed with a certificate.
+
+Proposing needs `inventory.write`; approving and completing need
+`disposal.approve`, so counter staff can raise a write-off and cannot sign it
+off. Only completion moves stock, and it moves through the ledger like
+everything else. A discount is a pricing decision, so it records the decision
+without removing units — those leave later through ordinary dispensing.
+
 ## Import
 
 ```

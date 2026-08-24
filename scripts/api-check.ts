@@ -275,6 +275,78 @@ const payload = notif.body?.notifications?.[0]?.payload;
 check('digest separates critical from total', payload?.critical <= payload?.total,
   `critical ${payload?.critical} of ${payload?.total}`);
 
+// --- suppliers and disposition (the money loop) -----------------------------
+const supplier = await call('POST', '/api/suppliers', {
+  name: `Emzor ${stamp}`, acceptsReturns: true,
+  returnWindowDaysBeforeExpiry: 90, creditRatePercent: 80,
+});
+check('create supplier with return terms', supplier.status === 201);
+
+const dispProduct = (await call('POST', '/api/products', { name: `Coartem ${stamp}` })).body?.id;
+const made: Record<string, string> = {};
+for (const [days, lot] of [[150, 'RETURNABLE'], [40, 'PASTWINDOW'], [-5, 'EXPIRED']] as const) {
+  const b = await call('POST', '/api/batches', {
+    productId: dispProduct, supplierId: supplier.body?.id,
+    batchNumber: `${lot}-${stamp}`, expiryDate: inDays(days),
+    quantity: 100, unitCostMinor: 185000, currency: 'NGN',
+  });
+  made[lot] = b.body?.id;
+}
+
+const optReturnable = await call('GET', `/api/batches/${made['RETURNABLE']}/options`);
+check('in-window stock is returnable', optReturnable.body?.returnable === true);
+check('credit is estimated at the agreed rate',
+  optReturnable.body?.estimatedCreditMinor === Math.round(185000 * 100 * 0.8),
+  `₦${(optReturnable.body?.estimatedCreditMinor / 100).toLocaleString()} of ₦185,000`);
+
+const optPast = await call('GET', `/api/batches/${made['PASTWINDOW']}/options`);
+check('stock past the return window is not returnable', optPast.body?.returnable === false);
+check('and says why', /return window/.test(optPast.body?.recommendation ?? ''),
+  optPast.body?.recommendation?.slice(0, 55));
+
+/*
+ * Expired must be reported as expired, not as "past the window". The window
+ * test is trivially true once a date has passed, and "discount or dispose" is
+ * wrong advice for stock that has to be destroyed with a certificate.
+ */
+const optExpired = await call('GET', `/api/batches/${made['EXPIRED']}/options`);
+check('expired stock is called expired, not out-of-window',
+  /Already expired/.test(optExpired.body?.recommendation ?? ''),
+  optExpired.body?.recommendation?.slice(0, 50));
+
+const disp = await call('POST', '/api/dispositions', {
+  batchId: made['RETURNABLE'], action: 'return_to_supplier', quantity: 100,
+});
+check('propose a return', disp.status === 201 && disp.body?.status === 'proposed');
+check('book value is captured at proposal', disp.body?.costValueMinor === 18500000);
+
+const earlyComplete = await call('POST', `/api/dispositions/${disp.body?.id}/complete`, {});
+check('cannot complete before approval', earlyComplete.status === 422, earlyComplete.body?.error);
+
+await call('POST', `/api/dispositions/${disp.body?.id}/approve`);
+const completed = await call('POST', `/api/dispositions/${disp.body?.id}/complete`, {
+  recoveredValueMinor: 14800000, creditNoteReference: `CN-${stamp}`, creditReceived: true,
+});
+check('complete records the credit', completed.body?.recoveredValueMinor === 14800000);
+
+const dispMoves = await call('GET', `/api/batches/${made['RETURNABLE']}/movements`);
+check('disposal leaves through the ledger',
+  dispMoves.body?.movements?.some((m: any) => m.reason === 'return_to_supplier' && m.quantityDelta === -100),
+  dispMoves.body?.movements?.map((m: any) => `${m.reason} ${m.quantityDelta}`).join(', '));
+check('batch is emptied, not deleted',
+  dispMoves.body?.movements?.at(-1)?.balanceAfter === 0);
+
+const over = await call('POST', '/api/dispositions', {
+  batchId: made['RETURNABLE'], action: 'destroy', quantity: 500,
+});
+check('cannot dispose more than is on hand', over.status === 422, over.body?.message?.slice(0, 45));
+
+const ledger = await call('GET', '/api/dispositions');
+check('recovery is reported against book value',
+  ledger.body?.summary?.recoveredValueMinor === 14800000
+  && ledger.body?.summary?.costValueMinor === 18500000,
+  `₦${(ledger.body?.summary?.recoveredValueMinor / 100).toLocaleString()} of ₦${(ledger.body?.summary?.costValueMinor / 100).toLocaleString()}`);
+
 // --- authorization ----------------------------------------------------------
 const anon = await app.inject({ method: 'GET', url: '/api/products' });
 check('anonymous read rejected', anon.statusCode === 401, `HTTP ${anon.statusCode}`);

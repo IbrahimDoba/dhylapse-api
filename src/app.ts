@@ -10,7 +10,9 @@ import authPlugin from './plugins/auth.ts';
 import { healthRoutes } from './routes/health.ts';
 import { batchRoutes } from './routes/batches.ts';
 import { dashboardRoutes } from './routes/dashboard.ts';
+import { dispositionRoutes } from './routes/dispositions.ts';
 import { importRoutes } from './routes/imports.ts';
+import { supplierRoutes } from './routes/suppliers.ts';
 import { alertRoutes } from './routes/alerts.ts';
 import { organizationRoutes } from './routes/organization.ts';
 import { locationRoutes } from './routes/locations.ts';
@@ -102,6 +104,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(organizationRoutes);
   await app.register(alertRoutes);
   await app.register(importRoutes);
+  await app.register(supplierRoutes);
+  await app.register(dispositionRoutes);
 
   return app;
 }
