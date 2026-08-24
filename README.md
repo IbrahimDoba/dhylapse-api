@@ -172,6 +172,23 @@ Capabilities are checked per action, not per role — see `src/lib/permissions.t
 Counter `staff` can receive stock and acknowledge alerts but cannot adjust
 balances or approve write-offs.
 
+## Demo data
+
+```sh
+./scripts/db-setup.sh --reset
+pnpm dev            # in one terminal
+pnpm seed:demo      # in another
+```
+
+Creates Greenline Pharmacy with 15 products, 37 batches across every alert
+band (including some already expired), dispensing history, and alerts already
+raised. Log in as `demo@greenline.ng` / `demo-pharmacy-2026`.
+
+It drives the HTTP API rather than writing rows directly, so the data lands
+exactly as a real user's would — batches post to the ledger, alerts come from
+the real scan. A fixture that bypasses the app hides the bugs a demo should
+surface.
+
 ## Checks
 
 ```sh
