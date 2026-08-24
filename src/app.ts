@@ -1,4 +1,5 @@
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
@@ -9,6 +10,7 @@ import authPlugin from './plugins/auth.ts';
 import { healthRoutes } from './routes/health.ts';
 import { batchRoutes } from './routes/batches.ts';
 import { dashboardRoutes } from './routes/dashboard.ts';
+import { importRoutes } from './routes/imports.ts';
 import { alertRoutes } from './routes/alerts.ts';
 import { organizationRoutes } from './routes/organization.ts';
 import { locationRoutes } from './routes/locations.ts';
@@ -36,6 +38,8 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(sensible);
+  // 10 MB covers a 20k-row spreadsheet with room to spare.
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
   await app.register(cors, {
     origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(',').map((s) => s.trim()),
     credentials: true,
@@ -97,6 +101,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(dashboardRoutes);
   await app.register(organizationRoutes);
   await app.register(alertRoutes);
+  await app.register(importRoutes);
 
   return app;
 }

@@ -104,6 +104,31 @@ POST /api/workspaces            { name } -> org, location, alert rules
 Requests select a workspace with the `X-Organization-Id` header. A header naming
 an organization the caller is not a member of is ignored, not honoured.
 
+## Import
+
+```
+POST /api/imports              multipart CSV or XLSX -> staged, nothing applied
+GET  /api/imports/:id          staged rows with per-field errors
+POST /api/imports/:id/commit   apply the valid rows, in one transaction
+GET  /api/imports
+```
+
+Nothing touches inventory on upload. Rows land in `import_row` with per-field
+errors so the pharmacist reviews their own data first — "your import silently
+created 400 wrong batches" is unrecoverable.
+
+Real files are messy, and that is normal input rather than user error. Column
+headings are matched by synonym (`Exp. Date`, `LOT NO`, `qty` all work), dates
+are read in seven formats including the `06/27` printed on blister packs,
+`"1,200"` and `₦110.00` parse, trailing blank rows are ignored, and a bad row
+is listed rather than failing the file. `31/06/2027` is rejected — June has
+30 days.
+
+Committed rows post a `receipt` to the ledger exactly as a manual entry does.
+Re-uploading an identical file is detected by content hash and warned about,
+because lots *with* a lot number are caught by the batch natural key but rows
+without one cannot be.
+
 ## Expiry alerts
 
 ```

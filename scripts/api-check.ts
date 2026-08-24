@@ -170,6 +170,91 @@ check('acknowledge succeeds', ack.body?.status === 'acknowledged');
 const ackTwice = await call('POST', `/api/alerts/${firstAlert.id}/acknowledge`);
 check('acknowledging twice is rejected', ackTwice.status === 404, ackTwice.body?.error);
 
+// --- CSV import -------------------------------------------------------------
+/** Builds a multipart body by hand; inject() takes no FormData. */
+function multipart(filename: string, content: string) {
+  const boundary = `----check${stamp}`;
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+    `Content-Type: text/csv\r\n\r\n${content}\r\n--${boundary}--\r\n`;
+  return { boundary, body };
+}
+
+async function upload(filename: string, content: string) {
+  const { boundary, body } = multipart(filename, content);
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/imports',
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, cookie },
+    payload: body,
+  });
+  let parsed: any = null;
+  try { parsed = res.json(); } catch { /* empty */ }
+  return { status: res.statusCode, body: parsed };
+}
+
+/*
+ * Deliberately messy, because real files are: a thousands separator, a naira
+ * sign, four date formats, a June 31st, a missing name, and trailing blank
+ * padding. Rejecting a file over any of these is how an import goes unused.
+ */
+const messy = [
+  'Drug Name,QTY,Exp. Date,Lot No,Unit Price',
+  `Lisinopril ${stamp},240,30/06/2027,LIS-${stamp},₦110.00`,
+  `Amlodipine ${stamp},"1,200",06/27,AML-${stamp},95.50`,
+  `Chloroquine ${stamp},60,Jun 2027,CHL-${stamp},45`,
+  `Zinc ${stamp},,2027-05-31,ZIN-${stamp},15`,
+  `Rifampicin ${stamp},80,sometime next year,RIF-${stamp},300`,
+  `,40,2027-08-31,XXX-${stamp},50`,
+  `Folic ${stamp},90,31/06/2027,FOL-${stamp},12`,
+  ',,,,',
+  ',,,,',
+].join('\n');
+
+const up = await upload('stock.csv', messy);
+check('import accepts a messy CSV', up.status === 201, `HTTP ${up.status}`);
+check('blank padding is not counted as rows', up.body?.rowCount === 7, `${up.body?.rowCount} rows`);
+check('good rows validate', up.body?.validCount === 3, `${up.body?.validCount} valid`);
+check('bad rows are flagged, not fatal', up.body?.errorCount === 4, `${up.body?.errorCount} errors`);
+
+const review = await call('GET', `/api/imports/${up.body?.id}?only=valid&limit=50`);
+const byName = (frag: string) =>
+  review.body?.rows?.find((r: any) => String(r.normalized?.name ?? '').startsWith(frag))?.normalized;
+check('day-first slash date', byName('Lisinopril')?.expiryDate === '2027-06-30');
+check('MM/YY reads as a month', byName('Amlodipine')?.expiryDate === '2027-06-30'
+  && byName('Amlodipine')?.expiryPrecision === 'month');
+check('thousands separator parses', byName('Amlodipine')?.quantity === 1200);
+check('currency symbol strips to minor units', byName('Lisinopril')?.unitCostMinor === 11000);
+
+const bad = await call('GET', `/api/imports/${up.body?.id}?only=invalid&limit=50`);
+const messages = (bad.body?.rows ?? []).flatMap((r: any) => r.errors.map((e: any) => e.message)).join(' | ');
+check('June 31st is rejected', /31\/06\/2027/.test(messages), 'impossible date caught');
+check('errors quote the offending value', /sometime next year/.test(messages));
+
+const commit = await call('POST', `/api/imports/${up.body?.id}/commit`);
+check('commit applies only valid rows', commit.body?.committed === 3, JSON.stringify(commit.body));
+const recommit = await call('POST', `/api/imports/${up.body?.id}/commit`);
+check('committing twice is refused', recommit.status === 409, recommit.body?.error);
+
+// Imported stock must arrive through the ledger like anything else.
+const imported = await call('GET', `/api/batches?q=Lisinopril ${stamp}`);
+const impBatch = imported.body?.batches?.[0];
+check('imported batch has the right quantity', impBatch?.quantityOnHand === 240);
+const impMoves = await call('GET', `/api/batches/${impBatch?.id}/movements`);
+check('imported stock posts a receipt to the ledger',
+  impMoves.body?.movements?.[0]?.reason === 'receipt', `${impMoves.body?.movements?.length} movement(s)`);
+
+const again = await upload('stock.csv', messy);
+check('re-uploading the same file warns', !!again.body?.duplicateOf, 'identical content hash');
+const againCommit = await call('POST', `/api/imports/${again.body?.id}/commit`);
+check('known lots are skipped, not duplicated', againCommit.body?.duplicates === 3,
+  `${againCommit.body?.duplicates} duplicates, ${againCommit.body?.committed} committed`);
+
+const noCols = await upload('bad.csv', 'Foo,Bar,Baz\n1,2,3');
+check('a file with no usable columns is rejected clearly', noCols.status === 422
+  && /Could not find/.test(noCols.body?.message ?? ''), noCols.body?.message?.slice(0, 60));
+
 // --- email delivery ---------------------------------------------------------
 const deliver = await call('POST', '/api/alerts/deliver');
 check('email queue drains', deliver.status === 200 && deliver.body?.sent >= 1,
